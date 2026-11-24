@@ -1,7 +1,9 @@
 """Exercise the shipped installer and verifier in disposable consumer repositories."""
 
+import importlib.util
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -39,6 +41,101 @@ class DeliveryTests(unittest.TestCase):
 
     def verify(self, ok=True, **env):
         return self.cmd("bash", str(SKILL / "scripts/verify.sh"), env=dict(CI="true", **env), ok=ok)
+
+    def write(self, name, content, mode=0o644):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+        path.chmod(mode)
+        return path
+
+    def test_shell_suite_precedence_then_individual_scripts(self):
+        self.write("tests/test_smoke test.sh", "#!/bin/sh\nexit 1\n", 0o755)
+        self.write("scripts/test.sh", "#!/bin/sh\nprintf ran > receipt\n", 0o755)
+        self.assertIn("SDM-VERIFY: PASS", self.verify())
+        self.assertEqual((self.root / "receipt").read_text(), "ran")
+        (self.root / "scripts/test.sh").unlink()
+        self.assertIn("SDM-VERIFY: FAIL", self.verify(ok=False))
+        self.write("tests/test_smoke test.sh", "#!/bin/sh\nexit 0\n", 0o755)
+        self.assertIn("SDM-VERIFY: PASS", self.verify())
+
+    @unittest.skipUnless(shutil.which("bats"), "Bats not installed")
+    def test_bats_suite(self):
+        for actual, ok in ((3, True), (4, False)):
+            self.write("test/sums.bats", f'@test "sum" {{ [ "$((1+2))" -eq {actual} ]; }}\n')
+            self.assertIn("bats test", self.verify(ok=ok))
+
+    def test_missing_required_runner_fails_even_when_another_suite_passes(self):
+        bin_dir = self.root / "available"
+        bin_dir.mkdir()
+        for tool in ("bash", "git", "mktemp", "grep", "tail", "date"):
+            (bin_dir / tool).symlink_to(shutil.which(tool))
+        self.write("tests/test_ok.sh", "#!/bin/sh\nexit 0\n", 0o755)
+        self.write("tests/required.bats", '@test "required" { true; }\n')
+        result = self.verify(ok=False, PATH=str(bin_dir))
+        self.assertIn("PASS  test   ./tests/test_ok.sh", result)
+        self.assertIn("FAIL  test   bats tests", result)
+
+    def test_stdlib_suite_without_manifest_and_empty_collection(self):
+        name = "tests/test_sum.py"
+        for expected, ok in ((3, True), (4, False)):
+            self.write(name, f"import unittest\nclass Totals(unittest.TestCase):\n"
+                             f"    def test_sum(self): self.assertEqual(1 + 2, {expected})\n")
+            self.assertIn("unittest-discover.py", self.verify(ok=ok, PYTHONDONTWRITEBYTECODE="1"))
+        self.write(name, "def helper(): pass\n")
+        self.assertIn("unittest collected no tests", self.verify(ok=False, PYTHONDONTWRITEBYTECODE="1"))
+        (self.root / name).unlink()
+        self.write("tests/__init__.py", "")
+        self.write("tests/unit/__init__.py", "")
+        self.write("tests/unit/values.py", "EXPECTED = 3\n")
+        self.write("tests/unit/test_sum.py", "import unittest\nfrom .values import EXPECTED\n"
+                   "class Totals(unittest.TestCase):\n    def test_sum(self): self.assertEqual(1 + 2, EXPECTED)\n")
+        self.assertIn("SDM-VERIFY: PASS", self.verify(PYTHONDONTWRITEBYTECODE="1"))
+
+    @unittest.skipUnless(importlib.util.find_spec("pytest"), "pytest not installed")
+    def test_configured_pytest_without_packaging_manifest(self):
+        self.write("pytest.ini", "[pytest]\n")
+        for expected, ok in ((3, True), (4, False)):
+            self.write("tests/test_sum.py", f"def test_sum(): assert 1 + 2 == {expected}\n")
+            self.assertIn("-m pytest", self.verify(ok=ok, PYTHONDONTWRITEBYTECODE="1",
+                                                   PYTEST_DISABLE_PLUGIN_AUTOLOAD="1"))
+
+    @unittest.skipUnless(shutil.which("cargo"), "Cargo not installed")
+    def test_cargo_suite(self):
+        self.write("Cargo.toml", '[package]\nname = "sum"\nversion = "0.1.0"\nedition = "2021"\n')
+        for expected, ok in ((3, True), (4, False)):
+            self.write("src/lib.rs", f"#[test]\nfn sum() {{ assert_eq!(1 + 2, {expected}); }}\n")
+            result = self.verify(ok=ok, CARGO_NET_OFFLINE="true")
+            self.assertIn("cargo test", result)
+            self.assertIn("cargo build", result)
+
+    @unittest.skipUnless(shutil.which("go"), "Go not installed")
+    def test_go_module_and_workspace_include_second_member(self):
+        env = dict(GOTOOLCHAIN="local", GOPROXY="off", GOSUMDB="off",
+                   GOCACHE=self.env.get("GOCACHE") or str(self.root / ".gocache"))
+        self.write("go.mod", "module example.test/root\n\ngo 1.20\n")
+        def suite(name, expected):
+            self.write(name, 'package sum\nimport "testing"\nfunc TestSum(t *testing.T) {\n'
+                             f'    if 1 + 2 != {expected} {{ t.Fatal("wrong sum") }}\n}}\n')
+        suite("root_test.go", 3)
+        self.assertIn("go test ./...", self.verify(GOWORK="off", **env))
+        suite("root_test.go", 4)
+        self.assertIn("wrong sum", self.verify(ok=False, GOWORK="off", **env))
+        suite("root_test.go", 3)
+        self.write("second member/go.mod", "module example.test/second\n\ngo 1.20\n")
+        self.write("go.work", 'go 1.20\n\nuse (\n    .\n    "./second member"\n)\n')
+        suite("second member/sum_test.go", 3)
+        self.assertIn("go-workspace.sh test", self.verify(GOWORK="", **env))
+        suite("second member/sum_test.go", 4)
+        self.assertIn("wrong sum", self.verify(ok=False, GOWORK="", **env))
+        (self.root / "go.mod").unlink()
+        self.write("go.work", 'go 1.20\nuse "./second member"\n')
+        suite("second member/sum_test.go", 3)
+        self.assertIn("SDM-VERIFY: PASS", self.verify(GOWORK="", **env))
+        with tempfile.TemporaryDirectory() as other:
+            (Path(other) / "go.mod").write_text("module example.test/external\n\ngo 1.20\n")
+            self.write("go.work", f'go 1.20\nuse "{Path(other).resolve()}"\n')
+            self.assertIn("outside this checkout", self.verify(ok=False, GOWORK="", **env))
 
     def test_install_and_upgrade_preserve_consumer_settings(self):
         self.assertEqual((self.root / ".claude/skills/sdm").resolve(), self.root / SKILL)

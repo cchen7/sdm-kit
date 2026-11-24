@@ -110,7 +110,7 @@ kit 改进后，在项目目录运行 `bash ~/sdm-kit/install.sh . --update`：�
 
 - 本地护栏可被 `--no-verify` 绕过；真正的硬约束是 GitHub 分支保护。
 - v1 只用分支，不强制 worktree：Codex 在 Linux / WSL 的 worktree 里提交会失败。
-- 自动发现支持：根目录 Makefile、Node（npm / pnpm / yarn / bun）、Python（pytest / ruff）、Rust、Go，以及根目录或 `Packages/*` 中的 Swift 包。已有项目优先用根 Makefile 接入原有检查；原生 UI、签名和专用主机检查单列。没有发现入口不等于项目没有测试。
+- 自动发现支持 Shell（项目测试脚本、Bats）、Python（pytest、标准库 unittest、已配置的 Ruff）、Rust（Cargo）、Go（`go.mod`、`go.work`）、Node 和 Swift 包。根 Makefile 的检查优先。支持的文件名、工作区范围和工具缺失时的行为见[验证说明](.agents/skills/sdm/references/verification.md)。原生 UI、签名和专用主机检查单列。
 - 主分支必须叫 `main`（或 `master`）。
 - 安装器不会覆盖其他工具的 hooks，也不会写入自定义 `core.hooksPath`。如果项目使用了这类 hooks，需先安排如何接入 SDM 护栏。
 

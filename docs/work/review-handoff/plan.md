@@ -6,3 +6,5 @@ One delivery item: teach the developer and reviewer when to hand off a candidate
 - Distinguish automated checks, acceptance evidence and version-specific exceptions. Pin the reviewed head at merge.
 - In existing projects, reuse documented test commands. Show whether the diff scan ran, including for isolated review and CI.
 - Verify a fresh installation and an update in disposable Git repositories, then check both successful and failing verification paths. Preserve project-owned settings and instructions.
+
+Scope update: cover Shell, Python, Rust and Go. Exercise the installed verifier using real passing and failing suites for each language, including an explicit Shell runner, Python standard library tests and a multi-module Go workspace.

@@ -30,6 +30,24 @@ add() { checks+=("$1|$2"); }
 if [ -f Makefile ] && grep -Eq '^(test|lint|build)[[:space:]]*:' Makefile; then
   for t in test lint build; do grep -Eq "^$t[[:space:]]*:" Makefile && add $t "make $t"; done
 else
+  # An explicit Shell suite owns its individual tests. Never sweep arbitrary product scripts.
+  shell_suite=""
+  for entry in tests/run.sh test/run.sh scripts/test.sh test.sh; do
+    [ -f "$entry" ] || continue
+    shell_suite=$entry; add test "./$entry"; break
+  done
+  if [ -z "$shell_suite" ]; then
+    for dir in tests test; do
+      for file in "$dir"/*.sh; do
+        [ -f "$file" ] || continue
+        case ${file##*/} in test_*.sh|*_test.sh) printf -v quoted '%q' "./$file"; add test "$quoted";; esac
+      done
+      for file in "$dir"/*.bats; do
+        [ -f "$file" ] || continue
+        add test "bats $dir"; break
+      done
+    done
+  fi
   if [ -f package.json ]; then
     pm=npm; [ -f pnpm-lock.yaml ] && pm=pnpm; [ -f yarn.lock ] && pm=yarn; { [ -f bun.lock ] || [ -f bun.lockb ]; } && pm=bun
     command -v node >/dev/null || warns+=("package.json found but node is not installed")
@@ -37,14 +55,34 @@ else
       case $k in typecheck) add lint "$pm run typecheck" ;; *) add $k "$pm run $k" ;; esac
     done
   fi
-  if [ -f pyproject.toml ] || [ -f requirements.txt ] || [ -f setup.py ]; then
-    py=python3; [ -x .venv/bin/python ] && py=.venv/bin/python
-    [ -f poetry.lock ] && py="poetry run python"; [ -f uv.lock ] && py="uv run python"
-    { [ -f conftest.py ] || [ -f pytest.ini ] || cat pyproject.toml setup.cfg tox.ini requirements*.txt 2>/dev/null | grep -q pytest; } && add test "$py -m pytest -q"
-    { [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -q '^\[tool\.ruff' pyproject.toml 2>/dev/null; } && add lint "$py -m ruff check ."
+  py=python3; [ -x .venv/bin/python ] && py=.venv/bin/python
+  [ -f poetry.lock ] && py="poetry run python"; [ -f uv.lock ] && py="uv run python"
+  if [ -f conftest.py ] || [ -f tests/conftest.py ] || [ -f pytest.ini ] || [ -f .pytest.ini ] ||
+     [ -f pytest.toml ] || [ -f .pytest.toml ] ||
+     grep -Eiq '(^|[^[:alnum:]_-])pytest([^[:alnum:]_-]|$)' pyproject.toml setup.py setup.cfg tox.ini requirements*.txt requirements/*.txt 2>/dev/null; then
+    add test "$py -m pytest -q"
+  else
+    for dir in tests test .; do
+      candidates=("$dir"/test*.py)
+      [ "$dir" = . ] || candidates+=("$dir/__init__.py")
+      for file in "${candidates[@]}"; do
+        [ -f "$file" ] || continue
+        add test "$py $SKILL/scripts/unittest-discover.py $dir"; break 2
+      done
+    done
   fi
-  if [ -f Cargo.toml ]; then add test "cargo test"; command -v cargo-clippy >/dev/null && add lint "cargo clippy --all-targets -- -D warnings"; add build "cargo build"; fi
-  if [ -f go.mod ]; then add test "go test ./..."; add lint "go vet ./..."; add build "go build ./..."; fi
+  { [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -q '^\[tool\.ruff' pyproject.toml 2>/dev/null; } && add lint "$py -m ruff check ."
+  if [ -f Cargo.toml ]; then
+    add test "cargo test"
+    if cargo clippy --version >/dev/null 2>&1; then add lint "cargo clippy --all-targets -- -D warnings"
+    else warns+=("Cargo Clippy unavailable for this toolchain; Rust lint not run."); fi
+    add build "cargo build"
+  fi
+  if [ -f go.work ] && [ "${GOWORK:-}" != off ]; then
+    add test "bash $SKILL/scripts/go-workspace.sh test"; add lint "bash $SKILL/scripts/go-workspace.sh vet"; add build "bash $SKILL/scripts/go-workspace.sh build"
+  elif [ -f go.mod ]; then
+    add test "go test ./..."; add lint "go vet ./..."; add build "go build ./..."
+  fi
   for manifest in ./Package.swift Packages/*/Package.swift; do
     [ -f "$manifest" ] || continue
     printf -v package_path '%q' "${manifest%/Package.swift}"

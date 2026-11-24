@@ -7,12 +7,13 @@ Read before the first verify in a project, when verify fails or finds nothing, a
 2. Discover the repo's own checks:
    - A root `Makefile` defining any of `test:` `lint:` `build:` → only those targets. Use this for multi-stack repos or unusual commands.
    - Otherwise every detected stack contributes:
+     - Shell: use the first of `tests/run.sh`, `test/run.sh`, `scripts/test.sh`, `test.sh`. Without a suite runner, run `test_*.sh` / `*_test.sh` and Bats suites (`*.bats`) directly under `tests/` and `test/`. Shell entry scripts must be executable; the shebang selects the interpreter. Bats must be on PATH for a Bats suite. Source or syntax checks alone are not tests.
      - `package.json` scripts `test`, `lint`, `typecheck`, `build`, run with npm / pnpm / yarn / bun (chosen by lockfile)
-     - Python (`pyproject.toml`, `requirements.txt` or `setup.py`): `pytest` and `ruff check` when configured; run via `uv run`, `poetry run`, `.venv` or `python3`
-     - `Cargo.toml`: `cargo test`, `cargo clippy` (if installed), `cargo build`
-     - `go.mod`: `go test ./...`, `go vet ./...`, `go build ./...`
+     - Python: use `python -m pytest -q` for a pytest configuration, conftest or declared pytest dependency. Otherwise discover unittest cases from the first conventional test root (`tests/`, `test/`, then the project root) containing `test*.py`; a `tests/` or `test/` package can also contain nested test modules. Empty unittest collection fails. Use a Makefile for other layouts or multiple independent roots. Configured Ruff runs as lint. The runner prefers a uv lock, Poetry lock, local `.venv`, then `python3`.
+     - Rust: a root `Cargo.toml` runs `cargo test`, available Clippy, and `cargo build`; Cargo's default workspace member selection is preserved. Use a Makefile for custom features, targets or all members when the workspace specifies a subset.
+     - Go: a root `go.mod` runs `go test ./...`, `go vet ./...` and `go build ./...`. With a root `go.work` and workspace mode enabled, run each check over the workspace's in-repository modules, including layouts without a root module. A workspace referencing another checkout requires an explicit scope; use a Makefile.
      - Swift manifests at `Package.swift` or `Packages/*/Package.swift`: `swift test --package-path <dir>` for each. Native app builds, UI runs, signing and project-specific guardrails require the project's own entry points and host.
-   - No test command → FAIL. Missing lint/build is reported, not fatal.
+   - No test command → FAIL. A detected test runner that is unavailable or exits unsuccessfully also fails verification. Missing optional lint/build is reported, not fatal.
 3. Run each check with `CI=true` and no stdin (no watch modes); print the tail of any failure; full logs go to a temp folder.
 4. When a comparison base is available, scan its merge base with HEAD: referee changes (AGENTS.md, sdm files, CI, Makefile, check scripts and configs), deleted tests, added skip/only markers and lint suppressions, size (> 30 files or > 1000 changed lines, lockfiles excluded).
 5. Print the EVIDENCE block, including whether the diff scan ran. Exit 0 only if every configured check passed. Locally the base defaults to main/master. In CI or a detached review use `SDM_BASE_SHA=<full base commit>` with both histories available; an explicit invalid or unreachable base fails. Without a base, CI reports the scan was skipped. Record a separate comparison before concluding checks were not weakened.

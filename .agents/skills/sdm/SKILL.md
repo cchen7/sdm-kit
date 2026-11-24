@@ -10,13 +10,14 @@ The user is the PM: they own *what* gets built and *whether it is accepted*. You
 Scripts (run from the repo root):
 - `bash .agents/skills/sdm/scripts/preflight.sh` — where am I, and may I write code? (exit 0 = yes)
 - `bash .agents/skills/sdm/scripts/verify.sh` — automated checks on the candidate (exit 0 = configured checks passed)
+- `bash .agents/skills/sdm/scripts/review-target.sh [branch]` — resolve the unmerged work branch, pinned `SHA`, `BASE` and `plan.md` for read-only review
 - `bash .agents/skills/sdm/scripts/setup.sh` — reinstall the git guard when preflight asks (e.g. fresh clone)
 
 ## Lifecycle: 1 work item = 1 branch = 1 PR = 1 chat
 
 **Every session starts with preflight.** Resuming a work branch? Rebuild context from the repo, not chat memory: `plan.md`, `git log --oneline main..HEAD` (the last commit's `Next:` line), `git diff --stat main...HEAD`.
 
-**0 · Bootstrap — new project, once.** For a new project without tests, the first work item is `chore/bootstrap`: agree the stack with the PM; create the skeleton with `test` / `lint` / `build` entry points verify can discover (references/verification.md); add the stack's setup steps to `.github/workflows/sdm-verify.yml`; fill in the Project section of AGENTS.md. For an existing project, read its documented checks first; connect them as described in [verification.md](references/verification.md).
+**0 · Bootstrap — new project, once.** For a new project without tests, the first work item is `chore/bootstrap`: clarify the product form and practical constraints with the PM in plain language (e.g. web page, desktop/mobile app, CLI or script; local-only vs login/stored data) rather than asking a non-developer PM to choose frameworks or languages. Unless the PM specifies a stack, pick a mainstream, easily verifiable stack yourself and note it in the 需求回执; create the skeleton with `test` / `lint` / `build` entry points verify can discover (references/verification.md); add the stack's setup steps to `.github/workflows/sdm-verify.yml`; fill in the Project section of AGENTS.md. For an existing project, read its documented checks first; connect them as described in [verification.md](references/verification.md).
 
 **1 · PLAN — in chat, on main, no file changes.**
 - When a UI or product choice affects acceptance, agree on the earliest runnable user action to show the PM with representative data before filling in the rest.
@@ -40,8 +41,8 @@ Scripts (run from the repo root):
 - Record each criterion's actual result and how it was checked. A PM decision to defer a gap for one version is separate from its test result. See [acceptance evidence and independent review](references/verification.md#acceptance-evidence).
 
 **5 · INTEGRATE — the PM accepts, then merge.** Use [git-lifecycle.md](references/git-lifecycle.md) to merge the reviewed commit and check what landed.
-- Write the **验收包** (template below): the PR body in GitHub mode, your message to the PM in local mode.
-- Tell the PM it is ready for review (second console: "评审 <branch>", using the shared handoff) and acceptance. Fix 必须改 findings, then re-verify.
+- Write the **验收包** (template below): the PR body in GitHub mode, your message to the PM in local mode. Keep the main body in plain product language; tuck file paths, commit SHAs and raw `verify.sh` output into the collapsible bottom section so non-developer PMs read what changed and how to try it first.
+- Tell the PM it is ready for review (second console: just say "评审", or "评审 <branch>" if multiple items are open) and acceptance. Fix 必须改 findings, then re-verify.
 - Merge only after the PM says "合并" (the PM may pre-authorize tiny changes). Delete the branch, return to main, and tell the PM: "本工作项已完成，请开新会话做下一个。"
 
 ## Decision rights
@@ -59,7 +60,7 @@ Rule of thumb: 撤得回的自己定，撤不回的先问。
 - A new idea mid-item → ask: "现在做（更新计划和验收标准），还是作为下一个工作项？"
 
 ## Review console (read-only)
-When asked to review, follow references/verification.md § Review. Never edit code, commit, switch branches or stash: the dev console shares this working copy.
+When asked to review ("评审" or "评审 <branch>"), run `bash .agents/skills/sdm/scripts/review-target.sh [branch]` to resolve the candidate without requiring the PM to look up branch names, then follow references/verification.md § Review. Never edit code, commit, switch branches or stash: the dev console shares this working copy.
 
 ## Templates
 
@@ -95,15 +96,24 @@ When asked to review, follow references/verification.md § Review. Never edit co
     ## 变更记录 Changes
     - <日期> <范围变更及 PM 的决定>
 
-**验收包** (PR body, or the local-mode message)
+**验收包** (PR body, or the local-mode message — product summary first, hashes and raw logs folded at the bottom)
 
-    ## <标题> — docs/work/<id>/plan.md
+    ## <标题>
     **做了什么**：<2–4 句，产品语言>
     **怎么试**：1. … 2. …
-    **验收标准**
-    - <标准> — <通过 / 失败 / 受阻 / 未测>；<候选版本、测试 / 原生操作 / PM 反馈及观察结果>
+    **验收结果**（自动检查：<全部通过 / 未通过>）
+    - <标准> — <通过 / 失败 / 受阻 / 未测>；<测试 / 原生操作 / PM 观察到的实际产品表现>
     **本版接受的缺口**（如有）：<谁、哪个版本、剩余影响和何时补验>
-    **实际运行的检查**：<粘贴 verify.sh 的 EVIDENCE 块>
-    **风险与注意**：<包括 verify 的警告；没有就写"无">
-    **我做的假设**：<可推翻的小决定>
+    **风险与注意**：<包括 verify 的警告，用一句话产品语言解释原因；没有就写"无">
+    **我做的假设**：<替 PM 拍板但可推翻的小决定>
     **顺带发现（未处理）**：<无关的问题或想法，由 PM 决定是否立项>
+
+    <details>
+    <summary>验证证据与版本信息（供评审与合并核对）</summary>
+
+    - 计划：`docs/work/<id>/plan.md`
+    - 分支与提交：`<branch>`（base `<base-sha>` → head `<head-sha>`）
+
+    <粘贴 verify.sh 的 EVIDENCE 块>
+
+    </details>

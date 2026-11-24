@@ -16,14 +16,21 @@
 - 不引入外部依赖或修改全局配置
 
 ## 验收标准 Acceptance
-- [ ] `README.md` 简洁克制，准确反映免技术栈选型的 `bootstrap` 与免填分支名的 `评审` 用法
-- [ ] `SKILL.md` 与 `verification.md` 完成 `bootstrap` 产品化提问、免分支名 `评审` 及分层「验收包」模板改造
-- [ ] 在临时 Git 仓库中测试 `review-target.sh`：唯一未合并分支自动识别（含合并旧分支后）、无未合并分支与多未合并分支安全报错并展示计划标题、显式传参正常解析
-- [ ] `verify.sh` 全部检查通过
+- [x] `README.md` 简洁克制，准确反映免技术栈选型的 `bootstrap` 与免填分支名的 `评审` 用法
+- [x] `SKILL.md` 与 `verification.md` 完成 `bootstrap` 产品化提问、免分支名 `评审` 及分层「验收包」模板改造
+- [x] 在临时 Git 仓库中测试 `review-target.sh`：唯一未合并分支自动识别（含合并旧分支后）、无未合并分支与多未合并分支安全报错并展示计划标题、显式传参正常解析
+- [x] `verify.sh` 全部检查通过
 
 ## 验证 Verification
-- 自动：`bash .agents/skills/sdm/scripts/verify.sh`
-- 手动：阅读更新后的 `README.md`、`SKILL.md` 模板及本次提交的验收包展示效果
+- 自动：`bash .agents/skills/sdm/scripts/verify.sh`（运行 `make test` 全量交付测试通过；差异扫描提示 `.agents/` 变更属本需求对 skill 本身的预期修改）
+- 手动：阅读更新后的 `README.md`、`SKILL.md` 模板，并在本仓库实跑 `bash .agents/skills/sdm/scripts/review-target.sh` 无参解析当前工作分支
+
+## 交接 Handoff
+- 基线提交（base）：`ec87445982afa779e07366724c84e9348fa07351`（`main`）
+- 候选提交（head）：见 `docs/readme-vibe-coding` 最新提交
+- 证据：`verify.sh` 全量测试通过（含 `test_review_target_resolves_sole_unmerged_branch_and_rejects_ambiguity`）；无参运行 `review-target.sh` 输出当前分支、SHA、BASE 与计划标题
+- 缺口：无
+- 下一位负责人：PM 验收（或在第二终端直接输入 `评审`），确认后回复“合并”
 
 ## 变更记录 Changes
 - 2026-11-24 PM 确认在精简 `README.md` 基础上，一并落地针对零开发经验用户的三项改进：`bootstrap` 改问产品形态、`评审` 免输分支名、验收包分层展示。

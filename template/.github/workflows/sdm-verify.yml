@@ -1,0 +1,20 @@
+# SDM: CI re-runs the same checks as the local verify gate.
+# Make "sdm-verify" a required status check on main (see the SDM kit README).
+name: sdm-verify
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+jobs:
+  sdm-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Bootstrap work item: add the stack's toolchain and dependency install here
+      # (use each action's current major version), for example:
+      #   - uses: actions/setup-node@vN   (node-version, cache: npm)   then  - run: npm ci
+      #   - uses: astral-sh/setup-uv@vN                                then  - run: uv sync
+      - name: Install dependencies (make setup, if defined)
+        run: if grep -Eq '^setup[[:space:]]*:' Makefile 2>/dev/null; then make setup; fi
+      - name: SDM verify
+        run: bash .agents/skills/sdm/scripts/verify.sh

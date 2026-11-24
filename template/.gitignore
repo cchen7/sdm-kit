@@ -1,0 +1,10 @@
+# SDM baseline — the bootstrap work item adds stack-specific entries
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+*.log
+node_modules/
+.venv/
+__pycache__/

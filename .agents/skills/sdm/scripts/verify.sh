@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SDM verify — the only definition of "done": runs this repo's own test/lint/build and prints evidence.
+# SDM verify — run the repo's configured checks and print candidate evidence.
 # Usage: bash .agents/skills/sdm/scripts/verify.sh   Exit 0 = PASS.   Details: references/verification.md
 root=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "SDM-VERIFY: FAIL — not a git repository"; exit 1; }
 cd "$root" || exit 1
@@ -12,11 +12,42 @@ if [ -z "${CI:-}" ]; then
   [ -z "$(git status --porcelain)" ] || { git status --short | head -n 20; echo "SDM-VERIFY: FAIL — uncommitted changes; commit first"; exit 1; }
 fi
 
+# A requested comparison must be possible; a shallow/missing base is not a clean scan.
+base=${SDM_BASE_SHA:-}; mb=""
+if [ -n "$base" ]; then
+  if ! [[ $base =~ ^([[:xdigit:]]{40}|[[:xdigit:]]{64})$ ]] || ! mb=$(git merge-base HEAD "$base" 2>/dev/null); then
+    echo "SDM-VERIFY: FAIL — SDM_BASE_SHA must be a full commit ID with available shared history." >&2
+    exit 1
+  fi
+elif [ -z "${CI:-}" ]; then
+  for b in main master origin/main origin/master; do
+    if mb=$(git merge-base HEAD "$b" 2>/dev/null); then base=$b; break; fi
+  done
+fi
+
 # 2 · Discover checks. A root Makefile defining test/lint/build wins; otherwise every detected stack contributes.
 add() { checks+=("$1|$2"); }
 if [ -f Makefile ] && grep -Eq '^(test|lint|build)[[:space:]]*:' Makefile; then
   for t in test lint build; do grep -Eq "^$t[[:space:]]*:" Makefile && add $t "make $t"; done
 else
+  # An explicit Shell suite owns its individual tests. Never sweep arbitrary product scripts.
+  shell_suite=""
+  for entry in tests/run.sh test/run.sh scripts/test.sh test.sh; do
+    [ -f "$entry" ] || continue
+    shell_suite=$entry; add test "./$entry"; break
+  done
+  if [ -z "$shell_suite" ]; then
+    for dir in tests test; do
+      for file in "$dir"/*.sh; do
+        [ -f "$file" ] || continue
+        case ${file##*/} in test_*.sh|*_test.sh) printf -v quoted '%q' "./$file"; add test "$quoted";; esac
+      done
+      for file in "$dir"/*.bats; do
+        [ -f "$file" ] || continue
+        add test "bats $dir"; break
+      done
+    done
+  fi
   if [ -f package.json ]; then
     pm=npm; [ -f pnpm-lock.yaml ] && pm=pnpm; [ -f yarn.lock ] && pm=yarn; { [ -f bun.lock ] || [ -f bun.lockb ]; } && pm=bun
     command -v node >/dev/null || warns+=("package.json found but node is not installed")
@@ -24,18 +55,49 @@ else
       case $k in typecheck) add lint "$pm run typecheck" ;; *) add $k "$pm run $k" ;; esac
     done
   fi
-  if [ -f pyproject.toml ] || [ -f requirements.txt ] || [ -f setup.py ]; then
-    py=python3; [ -x .venv/bin/python ] && py=.venv/bin/python
-    [ -f poetry.lock ] && py="poetry run python"; [ -f uv.lock ] && py="uv run python"
-    { [ -f conftest.py ] || [ -f pytest.ini ] || cat pyproject.toml setup.cfg tox.ini requirements*.txt 2>/dev/null | grep -q pytest; } && add test "$py -m pytest -q"
-    { [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -q '^\[tool\.ruff' pyproject.toml 2>/dev/null; } && add lint "$py -m ruff check ."
+  py=python3; [ -x .venv/bin/python ] && py=.venv/bin/python
+  [ -f poetry.lock ] && py="poetry run python"; [ -f uv.lock ] && py="uv run python"
+  if [ -f conftest.py ] || [ -f tests/conftest.py ] || [ -f pytest.ini ] || [ -f .pytest.ini ] ||
+     [ -f pytest.toml ] || [ -f .pytest.toml ] ||
+     grep -Eiq '(^|[^[:alnum:]_-])pytest([^[:alnum:]_-]|$)' pyproject.toml setup.py setup.cfg tox.ini requirements*.txt requirements/*.txt 2>/dev/null; then
+    add test "$py -m pytest -q"
+  else
+    for dir in tests test .; do
+      candidates=("$dir"/test*.py)
+      [ "$dir" = . ] || candidates+=("$dir/__init__.py")
+      for file in "${candidates[@]}"; do
+        [ -f "$file" ] || continue
+        add test "$py $SKILL/scripts/unittest-discover.py $dir"; break 2
+      done
+    done
   fi
-  if [ -f Cargo.toml ]; then add test "cargo test"; command -v cargo-clippy >/dev/null && add lint "cargo clippy --all-targets -- -D warnings"; add build "cargo build"; fi
-  if [ -f go.mod ]; then add test "go test ./..."; add lint "go vet ./..."; add build "go build ./..."; fi
+  { [ -f ruff.toml ] || [ -f .ruff.toml ] || grep -q '^\[tool\.ruff' pyproject.toml 2>/dev/null; } && add lint "$py -m ruff check ."
+  if [ -f Cargo.toml ]; then
+    add test "cargo test"
+    if cargo clippy --version >/dev/null 2>&1; then add lint "cargo clippy --all-targets -- -D warnings"
+    else warns+=("Cargo Clippy unavailable for this toolchain; Rust lint not run."); fi
+    add build "cargo build"
+  fi
+  if [ -f go.work ] && [ "${GOWORK:-}" != off ]; then
+    add test "bash $SKILL/scripts/go-workspace.sh test"; add lint "bash $SKILL/scripts/go-workspace.sh vet"; add build "bash $SKILL/scripts/go-workspace.sh build"
+  elif [ -f go.mod ]; then
+    add test "go test ./..."; add lint "go vet ./..."; add build "go build ./..."
+  fi
+  for manifest in ./Package.swift Packages/*/Package.swift; do
+    [ -f "$manifest" ] || continue
+    printf -v package_path '%q' "${manifest%/Package.swift}"
+    add test "swift test --package-path $package_path"
+  done
+  for project in *.xcodeproj *.xcworkspace; do
+    [ -d "$project" ] || continue
+    warns+=("Xcode project detected: package checks do not cover app builds, native UI, signing or project guardrails. Use the documented host checks.")
+    break
+  done
 fi
 printf '%s\n' "${checks[@]}" | grep -q '^test|' || {
-  echo "SDM-VERIFY: FAIL — no test command found (Makefile test target, package.json test script, pytest, cargo or go)."
-  echo "New project? Do the chore/bootstrap work item first. See $SKILL/references/verification.md"; exit 1; }
+  echo "SDM-VERIFY: FAIL — no supported test entry point was discovered."
+  echo "Check this project's instructions and CI; expose existing checks through a root Makefile test target. Bootstrap only if no tests exist."
+  exit 1; }
 
 # 3 · Run each check non-interactively (CI=true, no stdin) and keep the logs.
 i=0
@@ -46,9 +108,7 @@ for c in "${checks[@]}"; do
   [ $st = PASS ] || { echo "---- FAILED: $cmd (last 40 lines; full log: $LOG/$i-$kind.log)"; tail -n 40 "$LOG/$i-$kind.log"; }
 done
 
-# 4 · Diff scan (local only): referee changes, weakened tests, size.
-base=""; for b in main master origin/main origin/master; do git rev-parse -q --verify "$b^{commit}" >/dev/null && { base=$b; break; }; done
-mb=""; [ -z "${CI:-}" ] && [ -n "$base" ] && mb=$(git merge-base HEAD "$base" 2>/dev/null)
+# 4 · Diff scan: referee changes, weakened tests, size.
 if [ -n "$mb" ]; then
   [ -z "$(git status --porcelain)" ] || warns+=("checks created or changed files — keep build outputs in .gitignore: $(git status --porcelain | head -n 3 | tr '\n' ' ')")
   f=$(git diff --name-only "$mb" HEAD | grep -E '^(AGENTS\.md|CLAUDE\.md|\.agents/|\.claude/|\.github/|Makefile$)|(^|/)(\.eslintrc[^/]*|eslint\.config\.[^/]*|ruff\.toml|pytest\.ini|tox\.ini|setup\.cfg|tsconfig[^/]*\.json|\.golangci[^/]*)$' | head -n 8 | tr '\n' ' ')
@@ -71,7 +131,11 @@ res=PASS; [ $fail = 0 ] || res=FAIL
 echo "===== SDM VERIFY EVIDENCE ====="
 echo "Result:  $res"
 echo "Commit:  $(git rev-parse --short HEAD) on $(git symbolic-ref -q --short HEAD || echo detached) · $(date '+%Y-%m-%d %H:%M %z')"
-[ -n "$mb" ] && echo "Change:  vs $base — $size"
+if [ -n "$mb" ]; then
+  echo "Diff scan: compared $mb..HEAD — $size"
+else
+  echo "Diff scan: NOT RUN (no comparison base; provide SDM_BASE_SHA with both histories available)"
+fi
 echo "Checks:"; printf '%s\n' "${rows[@]}"
 for k in test lint build; do case $kinds in *" $k "*) ;; *) printf '  %-4s  %-5s  %s\n' "--" $k "not configured" ;; esac; done
 [ ${#warns[@]} -gt 0 ] && { echo "Warnings (explain each in the 验收包 under 风险与注意):"; printf '  ! %s\n' "${warns[@]}"; }

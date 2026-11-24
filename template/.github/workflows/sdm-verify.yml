@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       # Bootstrap work item: add the stack's toolchain and dependency install here
       # (use each action's current major version), for example:
       #   - uses: actions/setup-node@vN   (node-version, cache: npm)   then  - run: npm ci
@@ -17,4 +19,6 @@ jobs:
       - name: Install dependencies (make setup, if defined)
         run: if grep -Eq '^setup[[:space:]]*:' Makefile 2>/dev/null; then make setup; fi
       - name: SDM verify
+        env:
+          SDM_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: bash .agents/skills/sdm/scripts/verify.sh

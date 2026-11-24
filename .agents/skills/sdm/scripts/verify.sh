@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# SDM verify — the only definition of "done": runs this repo's own test/lint/build and prints evidence.
+# SDM verify — run the repo's configured checks and print candidate evidence.
 # Usage: bash .agents/skills/sdm/scripts/verify.sh   Exit 0 = PASS.   Details: references/verification.md
 root=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "SDM-VERIFY: FAIL — not a git repository"; exit 1; }
 cd "$root" || exit 1
@@ -10,6 +10,19 @@ checks=(); rows=(); warns=(); kinds=" "; fail=0
 if [ -z "${CI:-}" ]; then
   bash "$SKILL/scripts/preflight.sh" >"$LOG/preflight.txt" 2>&1 || { cat "$LOG/preflight.txt"; echo "SDM-VERIFY: FAIL — preflight not OK"; exit 1; }
   [ -z "$(git status --porcelain)" ] || { git status --short | head -n 20; echo "SDM-VERIFY: FAIL — uncommitted changes; commit first"; exit 1; }
+fi
+
+# A requested comparison must be possible; a shallow/missing base is not a clean scan.
+base=${SDM_BASE_SHA:-}; mb=""
+if [ -n "$base" ]; then
+  if ! [[ $base =~ ^([[:xdigit:]]{40}|[[:xdigit:]]{64})$ ]] || ! mb=$(git merge-base HEAD "$base" 2>/dev/null); then
+    echo "SDM-VERIFY: FAIL — SDM_BASE_SHA must be a full commit ID with available shared history." >&2
+    exit 1
+  fi
+elif [ -z "${CI:-}" ]; then
+  for b in main master origin/main origin/master; do
+    if mb=$(git merge-base HEAD "$b" 2>/dev/null); then base=$b; break; fi
+  done
 fi
 
 # 2 · Discover checks. A root Makefile defining test/lint/build wins; otherwise every detected stack contributes.
@@ -32,10 +45,21 @@ else
   fi
   if [ -f Cargo.toml ]; then add test "cargo test"; command -v cargo-clippy >/dev/null && add lint "cargo clippy --all-targets -- -D warnings"; add build "cargo build"; fi
   if [ -f go.mod ]; then add test "go test ./..."; add lint "go vet ./..."; add build "go build ./..."; fi
+  for manifest in ./Package.swift Packages/*/Package.swift; do
+    [ -f "$manifest" ] || continue
+    printf -v package_path '%q' "${manifest%/Package.swift}"
+    add test "swift test --package-path $package_path"
+  done
+  for project in *.xcodeproj *.xcworkspace; do
+    [ -d "$project" ] || continue
+    warns+=("Xcode project detected: package checks do not cover app builds, native UI, signing or project guardrails. Use the documented host checks.")
+    break
+  done
 fi
 printf '%s\n' "${checks[@]}" | grep -q '^test|' || {
-  echo "SDM-VERIFY: FAIL — no test command found (Makefile test target, package.json test script, pytest, cargo or go)."
-  echo "New project? Do the chore/bootstrap work item first. See $SKILL/references/verification.md"; exit 1; }
+  echo "SDM-VERIFY: FAIL — no supported test entry point was discovered."
+  echo "Check this project's instructions and CI; expose existing checks through a root Makefile test target. Bootstrap only if no tests exist."
+  exit 1; }
 
 # 3 · Run each check non-interactively (CI=true, no stdin) and keep the logs.
 i=0
@@ -46,9 +70,7 @@ for c in "${checks[@]}"; do
   [ $st = PASS ] || { echo "---- FAILED: $cmd (last 40 lines; full log: $LOG/$i-$kind.log)"; tail -n 40 "$LOG/$i-$kind.log"; }
 done
 
-# 4 · Diff scan (local only): referee changes, weakened tests, size.
-base=""; for b in main master origin/main origin/master; do git rev-parse -q --verify "$b^{commit}" >/dev/null && { base=$b; break; }; done
-mb=""; [ -z "${CI:-}" ] && [ -n "$base" ] && mb=$(git merge-base HEAD "$base" 2>/dev/null)
+# 4 · Diff scan: referee changes, weakened tests, size.
 if [ -n "$mb" ]; then
   [ -z "$(git status --porcelain)" ] || warns+=("checks created or changed files — keep build outputs in .gitignore: $(git status --porcelain | head -n 3 | tr '\n' ' ')")
   f=$(git diff --name-only "$mb" HEAD | grep -E '^(AGENTS\.md|CLAUDE\.md|\.agents/|\.claude/|\.github/|Makefile$)|(^|/)(\.eslintrc[^/]*|eslint\.config\.[^/]*|ruff\.toml|pytest\.ini|tox\.ini|setup\.cfg|tsconfig[^/]*\.json|\.golangci[^/]*)$' | head -n 8 | tr '\n' ' ')
@@ -71,7 +93,11 @@ res=PASS; [ $fail = 0 ] || res=FAIL
 echo "===== SDM VERIFY EVIDENCE ====="
 echo "Result:  $res"
 echo "Commit:  $(git rev-parse --short HEAD) on $(git symbolic-ref -q --short HEAD || echo detached) · $(date '+%Y-%m-%d %H:%M %z')"
-[ -n "$mb" ] && echo "Change:  vs $base — $size"
+if [ -n "$mb" ]; then
+  echo "Diff scan: compared $mb..HEAD — $size"
+else
+  echo "Diff scan: NOT RUN (no comparison base; provide SDM_BASE_SHA with both histories available)"
+fi
 echo "Checks:"; printf '%s\n' "${rows[@]}"
 for k in test lint build; do case $kinds in *" $k "*) ;; *) printf '  %-4s  %-5s  %s\n' "--" $k "not configured" ;; esac; done
 [ ${#warns[@]} -gt 0 ] && { echo "Warnings (explain each in the 验收包 under 风险与注意):"; printf '  ! %s\n' "${warns[@]}"; }

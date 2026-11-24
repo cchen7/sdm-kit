@@ -21,25 +21,28 @@ GitHub mode when `origin` points to GitHub and `gh auth status` succeeds; otherw
 Message `<type>: <what changed>`. Stopping mid-way: add a body line `Next: <what remains>`; preflight shows it to the next session.
 
 ## Integrate: GitHub mode
-1. `git push -u origin HEAD`
-2. `gh pr create --base main --title "<type>: <标题>" --body-file <file>` (the 验收包, in a temp file outside the repo)
+1. At the first reviewable checkpoint, when publishing is authorized, `git push -u origin HEAD` and open a draft with `gh pr create --draft --base main --title "<type>: <标题>" --body-file <file>`. Use this same PR for the final 验收包. Without push authorization, share the local commit range.
+2. Record the reviewed full head SHA and the target base SHA. If the base advances across a shared manifest, migration or user path, verify the combined tree and record its tree ID before merging.
 3. `gh pr checks --watch` — red CI = not done.
 4. Review findings arrive as PR comments: fix, re-verify, push, update the body (`gh pr edit --body-file <file>`).
-5. After the PM says 合并: `gh pr merge --merge --delete-branch`, then `git switch main && git pull --ff-only`.
+5. After acceptance and merge authorization, mark the draft ready if needed, then use `gh pr merge <PR> --merge --match-head-commit "$REVIEWED_HEAD"` (omit the strategy for a merge queue). Use the full SHA from the review. A mismatch requires review of the new head. Wait for the PR to be merged; verify the merge commit and, when a combined tree was tested, compare tree IDs. Only then sync main and clean up the merged branch.
 
 ## Integrate: local mode
-1. Send the 验收包 in chat. Review findings arrive in `docs/work/<id>/review.md`: commit it together with your fixes.
+1. Keep scope, evidence and next owner in the shared plan; the Git ID of the handoff commit identifies a local candidate without writing its SHA into itself. Send the 验收包 in chat. Record findings in `docs/work/<id>/review.md` together with any fixes; put the final verdict and reviewed SHA in the merge message.
 2. After the PM says 合并 (message file: first line `Merge <branch>: <标题>`, then the 验收包):
 
-       git switch main
-       git merge --no-ff <type>/<id> -F <message-file>
-       git branch -d <type>/<id>
+       # Set WORK_BRANCH and REVIEWED_HEAD from the handoff; MESSAGE_FILE is the acceptance note.
+       if [ "$(git rev-parse "$WORK_BRANCH")" = "$REVIEWED_HEAD" ]; then
+         git switch main && git merge --no-ff "$REVIEWED_HEAD" -F "$MESSAGE_FILE"
+       else
+         echo "Branch changed; review the new head before merging."
+       fi
 
-   Merge commits are allowed on main; plain commits are not.
+   Verify the merge commit and any tested combined tree before removing the merged branch. Merge commits are allowed on main; plain commits are not.
 3. Conflict: `git merge --abort`, `git switch <type>/<id>`, `git merge main`, resolve there, re-verify, retry.
 
 ## After the merge
-Tell the PM the item is done and suggest a new chat for the next one. The PR (or merge commit), plan.md and the commits are the permanent record.
+Tell the PM the item is done and suggest a new chat for the next one. The PR (or merge commit), plan.md and the commits are the permanent record. A grant to merge covers that action and scope; it does not grant permission to publish a release or send a different artifact. Carry forward still-valid grants without asking again.
 
 ## Ask the PM first
 Any `push --force`, `reset --hard`, rebase of pushed commits, `branch -D`, `clean -fdx`, discarding uncommitted work (`checkout -- .`, `restore .`, `stash drop`), history rewriting, deleting tags, releases or remote branches you didn't create, changing remotes, hooks or git config.

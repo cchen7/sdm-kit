@@ -62,7 +62,7 @@ bash ~/sdm-kit/install.sh ~/code/my-app
 | 合并 | 合并、删分支，并提醒你开新会话 |
 | 继续上次的工作 | 从计划和提交记录里恢复上下文 |
 
-**验收时看「验收包」**：做了什么、怎么试、每条验收标准 ✅/❌ 及证据、实际跑过的检查、风险、它替你做的假设、顺带发现的问题。按"怎么试"亲手试一遍，再说"合并"。
+**验收时看「验收包」**：做了什么、怎么试、每条标准的结果（通过 / 失败 / 受阻 / 未测）、版本与证据；本版经你接受的缺口另列、实际跑过的检查、风险、它替你做的假设、顺带发现的问题。按"怎么试"亲手试一遍，再说"合并"。
 
 **agent 必须先问你的情况**：需求有歧义且结果差别大、超出范围、新增外部服务或付费依赖、改数据结构或对外接口、涉及安全 / 隐私 / 钱、不可撤销的操作、同一个问题失败 3 次。其余它自己决定——撤得回的自己定，撤不回的先问。
 
@@ -70,6 +70,7 @@ bash ~/sdm-kit/install.sh ~/code/my-app
 
 - **开发终端**：一个工作项一个会话；合并后关掉，下一个需求开新会话（上下文干净，agent 更可靠）。
 - **评审终端**：只读。建议用和开发**不同的工具或模型**（例如 Claude Code 开发、Codex 评审），交叉检查更有效。
+- 第一项能演示或复验时就交审。在获准推送的草稿 PR 或本地计划写清：改动范围、基线和候选提交、证据、缺口、下一位负责人。两个终端直接读同一处，你不用转贴意见。涉及权限、计量或升级时，评审方先从用户预期设计一个反例，修复后在新提交上复验。
 - 两个终端共用一个文件夹，所以评审方只读 git 记录，不切分支、不改代码。本地模式下意见写进 `docs/work/<id>/review.md`；GitHub 模式下写在 PR 评论里。
 
 ## 5 · 本地模式与 GitHub 模式
@@ -103,13 +104,13 @@ Codex 默认沙箱可能会要求批准 Git 写入。Claude Code 的链接需要
 
 ## 8 · 升级
 
-kit 改进后，在项目目录运行 `bash ~/sdm-kit/install.sh . --update`：会刷新 `.agents/skills/sdm/` 和 `AGENTS.md` 中的 SDM 段落，并补齐缺失的兼容入口。已有的 CI 文件和项目规则中的其他段落会保留；审阅后以工作项 `chore/sdm-update` 提交。
+kit 改进后，在项目目录运行 `bash ~/sdm-kit/install.sh . --update`：会刷新 `.agents/skills/sdm/` 和 `AGENTS.md` 中的 SDM 段落，并补齐缺失的兼容入口。已有的 CI 文件和项目规则中的其他段落会保留；旧 CI 若要运行差异扫描，请对照新版工作流模板传入 `SDM_BASE_SHA` 并检出完整历史；审阅后以工作项 `chore/sdm-update` 提交。
 
 ## 9 · v1 已知限制
 
 - 本地护栏可被 `--no-verify` 绕过；真正的硬约束是 GitHub 分支保护。
 - v1 只用分支，不强制 worktree：Codex 在 Linux / WSL 的 worktree 里提交会失败。
-- 自动发现支持：根目录 Makefile、Node（npm / pnpm / yarn / bun）、Python（pytest / ruff）、Rust、Go。其他技术栈让 agent 在 bootstrap 时加一个带 `test` / `lint` / `build` 的 Makefile。
+- 自动发现支持：根目录 Makefile、Node（npm / pnpm / yarn / bun）、Python（pytest / ruff）、Rust、Go，以及根目录或 `Packages/*` 中的 Swift 包。已有项目优先用根 Makefile 接入原有检查；原生 UI、签名和专用主机检查单列。没有发现入口不等于项目没有测试。
 - 主分支必须叫 `main`（或 `master`）。
 - 安装器不会覆盖其他工具的 hooks，也不会写入自定义 `core.hooksPath`。如果项目使用了这类 hooks，需先安排如何接入 SDM 护栏。
 

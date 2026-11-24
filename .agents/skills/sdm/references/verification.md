@@ -36,7 +36,7 @@ For unattended desktop QA, verify the test process and isolated data location be
 
 ## Review
 Goal: an independent check of one pinned commit against plan.md — not a rewrite, not style preferences.
-1. Pin: `SHA=$(git rev-parse <branch>)`, `BASE=$(git merge-base main $SHA)`. Quote the SHA in your findings.
+1. Pin: run `bash .agents/skills/sdm/scripts/review-target.sh [branch]` to resolve `BRANCH`, `SHA`, `BASE` and `PLAN`. When the PM says only "评审", it automatically selects the sole unmerged work branch; if multiple unmerged branches exist, ask the PM which item to review using their plan titles rather than raw Git branch names.
 2. Read through git objects only: `git diff $BASE $SHA`, `git show $SHA:<path>`, `git log $BASE..$SHA`. Never checkout, switch, stash, reset, commit or edit: the dev console shares this working copy.
 3. Check, in order:
    - Scope: every change traces to plan.md; flag unrelated changes.
@@ -46,6 +46,6 @@ Goal: an independent check of one pinned commit against plan.md — not a rewrit
    - Risks: likely bugs, security or privacy issues, data loss, unhandled errors on user paths.
    - Honesty: the 验收包 matches the diff and the evidence.
 4. Optional, recommended in local mode — run the checks yourself on the pinned commit in a throwaway worktree: `git worktree add --detach <tmp> $SHA`, install dependencies there, `CI=true SDM_BASE_SHA="$BASE" bash .agents/skills/sdm/scripts/verify.sh`, then `git worktree remove --force <tmp>`.
-5. Report in Chinese, product language first: verdict 可以验收 / 需修改; findings graded 必须改 / 建议改 / 可忽略, each with file:line and a one-line reason.
+5. Report in Chinese, product language first: verdict 可以验收 / 需修改; findings graded 必须改 / 建议改 / 可忽略, each with a plain-language explanation (plus `file:line` for the developer); put the pinned `BRANCH` and `SHA` on a reference line at the bottom.
 6. Record head, base, verdict, open findings and who acts next in the shared handoff. If separately authorized to fix a critical finding yourself, hand that fix to another reviewer.
 7. Deliver: GitHub mode → `gh pr comment <PR> --body-file <file>`. Local mode → append a section `## Review @<SHA>` to `docs/work/<id>/review.md` — the only file you may write.

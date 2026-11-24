@@ -186,3 +186,56 @@ class DeliveryTests(unittest.TestCase):
     def test_existing_unknown_runner_is_not_silently_accepted(self):
         (self.root / "custom-test.sh").write_text("exit 0\n")
         self.assertIn("no supported test entry point", self.verify(ok=False))
+
+    def test_review_target_resolves_sole_unmerged_branch_and_rejects_ambiguity(self):
+        script = str(SKILL / "scripts/review-target.sh")
+        # Commit the installed skill on main first, matching a real project after install.
+        self.cmd("git", "switch", "-q", "main")
+        self.cmd("git", "add", ".")
+        self.cmd("git", "-c", "commit.gpgsign=false", "commit", "--no-verify", "-qm", "chore: install sdm")
+        base = self.cmd("git", "rev-parse", "HEAD").strip()
+        self.cmd("git", "branch", "-qf", "feature/example", "main")
+        self.cmd("git", "switch", "-q", "feature/example")
+
+        self.assertIn("no unmerged work branch", self.cmd("bash", script, ok=False))
+
+        self.write("docs/work/example/plan.md", "# 登录页改造\n")
+        self.cmd("git", "add", ".")
+        self.cmd("git", "-c", "commit.gpgsign=false", "commit", "-qm", "docs: plan for example")
+        example_sha = self.cmd("git", "rev-parse", "HEAD").strip()
+
+        # Works both on the work branch and when HEAD is back on main.
+        for checkout in ("feature/example", "main"):
+            self.cmd("git", "switch", "-q", checkout)
+            resolved = self.cmd("bash", script)
+            self.assertIn("BRANCH=feature/example\n", resolved)
+            self.assertIn(f"SHA={example_sha}\n", resolved)
+            self.assertIn(f"BASE={base}\n", resolved)
+            self.assertIn("PLAN=docs/work/example/plan.md\n", resolved)
+            self.assertIn("TITLE=登录页改造\n", resolved)
+
+        # Once merged into main, the old branch is ignored when a new work branch opens.
+        self.cmd("git", "merge", "--no-ff", "-qm", "Merge feature/example", "feature/example")
+        merged_main = self.cmd("git", "rev-parse", "HEAD").strip()
+        self.cmd("git", "switch", "-qc", "fix/export")
+        self.write("docs/work/export/plan.md", "# 修复导出表格\n")
+        self.cmd("git", "add", ".")
+        self.cmd("git", "-c", "commit.gpgsign=false", "commit", "-qm", "docs: plan for export")
+        export_sha = self.cmd("git", "rev-parse", "HEAD").strip()
+        resolved = self.cmd("bash", script)
+        self.assertIn("BRANCH=fix/export\n", resolved)
+        self.assertIn(f"SHA={export_sha}\n", resolved)
+        self.assertIn(f"BASE={merged_main}\n", resolved)
+
+        # With two unmerged branches, bare review refuses to guess and surfaces plan titles.
+        self.cmd("git", "switch", "-q", "main")
+        self.cmd("git", "switch", "-qc", "feature/search")
+        self.write("docs/work/search/plan.md", "# 搜索筛选\n")
+        self.cmd("git", "add", ".")
+        self.cmd("git", "-c", "commit.gpgsign=false", "commit", "-qm", "docs: plan for search")
+        ambiguous = self.cmd("bash", script, ok=False)
+        self.assertIn("multiple unmerged work branches", ambiguous)
+        self.assertIn("fix/export — 修复导出表格", ambiguous)
+        self.assertIn("feature/search — 搜索筛选 (checked out)", ambiguous)
+        self.assertIn("BRANCH=fix/export\n", self.cmd("bash", script, "fix/export"))
+

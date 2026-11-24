@@ -13,10 +13,17 @@
 - 不新增额外文档文件
 
 ## 验收标准 Acceptance
-- [ ] `README.md` 采用克制的开源仓库描述风格，点明本质上是一个面向 coding agent 的轻量交付护栏 skill，无推销口号与冗长配置教程
-- [ ] 准确包含解决的问题、工作原理、安装/升级命令、日常指令与许可证链接
-- [ ] `verify.sh` 全部检查通过
+- [x] `README.md` 采用克制的开源仓库描述风格，点明本质上是一个面向 coding agent 的轻量交付护栏 skill，无推销口号与冗长配置教程
+- [x] 准确包含解决的问题、工作原理、安装/升级命令、日常指令与许可证链接
+- [x] `verify.sh` 全部检查通过
 
 ## 验证 Verification
-- 自动：`bash .agents/skills/sdm/scripts/verify.sh`
-- 手动：打开根目录 `README.md` 通读结构、篇幅与命令准确性
+- 自动：`bash .agents/skills/sdm/scripts/verify.sh`（`make test` 通过，差异扫描通过，无警告）
+- 手动：打开根目录 `README.md` 通读结构、篇幅与命令准确性（全文精简为 58 行）
+
+## 交接 Handoff
+- 基线提交（base）：`ec87445982afa779e07366724c84e9348fa07351`（`main`）
+- 候选提交（head）：见当前分支最新提交（`git rev-parse docs/readme-vibe-coding`）
+- 证据：`verify.sh` 运行 `make test` 通过，diff 扫描无裁判规则改动或抑制警告；人工核对 `README.md` 命令与当前脚本一致
+- 缺口：无
+- 下一位负责人：PM 验收（或第二终端运行 `评审 docs/readme-vibe-coding`），确认后回复“合并”

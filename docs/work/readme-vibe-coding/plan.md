@@ -1,29 +1,29 @@
-# 精简并重写面向 vibe coding 用户的 README
+# 面向零经验 / vibe coding 用户的 README 与交互门槛优化
 分支：docs/readme-vibe-coding · 创建：2026-11-24
 
 ## 目标 Goal
-用克制的 GitHub 仓库风格重写 `README.md`，直接说明 `sdm-kit` 作为轻量交付护栏 skill 在 vibe coding 场景下解决的问题、核心机制、安装与日常用法，去掉冗余流程说明。
+让没有软件开发经验的 vibe coding 用户能看懂仓库定位，并在首次立项（bootstrap）、交叉评审（评审）和阅读验收包时无需理解技术栈选型、Git 分支名或底层哈希日志。
 
 ## 范围 Scope
-- 用已确认的精简版本替换根目录 `README.md`
-- 同步对齐 `verify.sh` 当前支持的检查范围（Makefile、Shell、Node、Python、Rust、Go、Swift）、`--update` 升级命令与 GPL-3.0 许可证链接
+- 用克制的 GitHub 仓库风格重写根目录 `README.md`
+- 调整 `SKILL.md` 的 `0 · Bootstrap`：面向 PM 只确认产品形态与核心约束，由 agent 默认选定主流易验证的技术栈（PM 主动指定时除外）
+- 新增只读辅助脚本 `.agents/skills/sdm/scripts/review-target.sh` 并更新 `SKILL.md` / `verification.md`：输入 `评审` 免填分支名即可自动定位唯一未合并的工作分支；存在多个未合并分支时列出计划标题供 PM 选择
+- 调整 `SKILL.md` 的「验收包」模板为分层结构：首屏只呈现产品语言（做了什么、怎么试、检查与验收结论、需留意事项），将路径、base/head SHA 与 `verify.sh` 原始证据折叠在底部备查
+- 在 `tests/test_delivery.py` 补充 `review-target.sh` 在临时 Git 仓库中的集成测试
 
 ## 不做 Out of scope
-- 不修改 `.agents/skills/sdm/`、`template/`、`install.sh` 或测试逻辑
-- 不新增额外文档文件
+- 不改动 `guard.sh`、`preflight.sh`、`verify.sh` 的门禁与差异扫描规则
+- 不引入外部依赖或修改全局配置
 
 ## 验收标准 Acceptance
-- [x] `README.md` 采用克制的开源仓库描述风格，点明本质上是一个面向 coding agent 的轻量交付护栏 skill，无推销口号与冗长配置教程
-- [x] 准确包含解决的问题、工作原理、安装/升级命令、日常指令与许可证链接
-- [x] `verify.sh` 全部检查通过
+- [ ] `README.md` 简洁克制，准确反映免技术栈选型的 `bootstrap` 与免填分支名的 `评审` 用法
+- [ ] `SKILL.md` 与 `verification.md` 完成 `bootstrap` 产品化提问、免分支名 `评审` 及分层「验收包」模板改造
+- [ ] 在临时 Git 仓库中测试 `review-target.sh`：唯一未合并分支自动识别（含合并旧分支后）、无未合并分支与多未合并分支安全报错并展示计划标题、显式传参正常解析
+- [ ] `verify.sh` 全部检查通过
 
 ## 验证 Verification
-- 自动：`bash .agents/skills/sdm/scripts/verify.sh`（`make test` 通过，差异扫描通过，无警告）
-- 手动：打开根目录 `README.md` 通读结构、篇幅与命令准确性（全文精简为 58 行）
+- 自动：`bash .agents/skills/sdm/scripts/verify.sh`
+- 手动：阅读更新后的 `README.md`、`SKILL.md` 模板及本次提交的验收包展示效果
 
-## 交接 Handoff
-- 基线提交（base）：`ec87445982afa779e07366724c84e9348fa07351`（`main`）
-- 候选提交（head）：见当前分支最新提交（`git rev-parse docs/readme-vibe-coding`）
-- 证据：`verify.sh` 运行 `make test` 通过，diff 扫描无裁判规则改动或抑制警告；人工核对 `README.md` 命令与当前脚本一致
-- 缺口：无
-- 下一位负责人：PM 验收（或第二终端运行 `评审 docs/readme-vibe-coding`），确认后回复“合并”
+## 变更记录 Changes
+- 2026-11-24 PM 确认在精简 `README.md` 基础上，一并落地针对零开发经验用户的三项改进：`bootstrap` 改问产品形态、`评审` 免输分支名、验收包分层展示。
